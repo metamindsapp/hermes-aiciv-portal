@@ -1,0 +1,99 @@
+name: AiCIV Product Layer CI
+
+on:
+  pull_request:
+    paths:
+      - "aiciv/**"
+      - "brand/**"
+      - ".aiciv/**"
+      - "web/**"
+      - "apps/shared/**"
+      - ".github/workflows/aiciv-product-ci.yml"
+  push:
+    branches: [main]
+    paths:
+      - "aiciv/**"
+      - "brand/**"
+      - ".aiciv/**"
+      - "web/**"
+      - "apps/shared/**"
+      - ".github/workflows/aiciv-product-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  product-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install focused validation dependencies
+        run: python -m pip install --disable-pip-version-check fastapi pyyaml
+
+      - name: Compile AiCIV Python modules
+        run: |
+          python -m py_compile \
+            aiciv/install.py \
+            aiciv/scripts/brand_lint.py \
+            aiciv/plugins/aiciv-workspace/dashboard/plugin_api.py \
+            aiciv/tests/test_brand_contract.py \
+            aiciv/tests/test_workspace_plugin.py
+
+      - name: Validate plugin manifest and theme YAML
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import yaml
+
+          manifest = json.loads(Path('aiciv/plugins/aiciv-workspace/dashboard/manifest.json').read_text())
+          assert manifest['name'] == 'aiciv-workspace'
+          assert manifest['tab']['override'] == '/'
+          assert manifest['api'] == 'plugin_api.py'
+          theme = yaml.safe_load(Path('brand/themes/aiciv-living-record.yaml').read_text())
+          assert theme['name'] == 'aiciv-living-record'
+          assert theme['layoutVariant'] == 'cockpit'
+          PY
+
+      - name: Parse dashboard plugin JavaScript
+        run: node --check aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+
+      - name: Enforce Living Record brand constraints
+        run: python aiciv/scripts/brand_lint.py
+
+      - name: Run all AiCIV product tests
+        run: python -m unittest discover -s aiciv/tests -p 'test_*.py' -v
+
+      - name: Dry-run installer
+        run: python aiciv/install.py --hermes-home /tmp/hermes-aiciv-ci --dry-run
+
+  hermes-dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install pinned Hermes dashboard dependencies
+        run: npm ci
+
+      - name: Typecheck Hermes dashboard
+        run: npm run typecheck
+
+      - name: Build Hermes dashboard for production
+        run: npm run build
+
+      - name: Run Hermes dashboard tests
+        run: npm test
