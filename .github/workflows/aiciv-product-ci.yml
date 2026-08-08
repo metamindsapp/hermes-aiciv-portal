@@ -8,6 +8,8 @@ on:
       - ".aiciv/**"
       - "web/**"
       - "apps/shared/**"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/aiciv-product-ci.yml"
   push:
     branches: [main]
@@ -17,6 +19,8 @@ on:
       - ".aiciv/**"
       - "web/**"
       - "apps/shared/**"
+      - "package.json"
+      - "package-lock.json"
       - ".github/workflows/aiciv-product-ci.yml"
 
 permissions:
@@ -74,26 +78,23 @@ jobs:
 
   hermes-dashboard:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: web
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install pinned Hermes dashboard dependencies
+      - name: Install exact Hermes workspace dependencies
         run: npm ci
 
       - name: Typecheck Hermes dashboard
-        run: npm run typecheck
+        run: npm --workspace web run typecheck
 
       - name: Build Hermes dashboard for production
-        run: npm run build
+        run: npm --workspace web run build
 
       - name: Run Hermes dashboard tests
-        run: npm test
+        run: npm --workspace web test
