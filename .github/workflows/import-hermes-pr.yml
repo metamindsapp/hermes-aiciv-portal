@@ -33,11 +33,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Preserve AiCIV import metadata
+      - name: Preserve AiCIV upstream metadata
         run: |
-          mkdir -p /tmp/aiciv-preserve/.aiciv /tmp/aiciv-preserve/.github/workflows
+          mkdir -p /tmp/aiciv-preserve/.aiciv
           cp .aiciv/UPSTREAM.md /tmp/aiciv-preserve/.aiciv/UPSTREAM.md
-          cp .github/workflows/import-hermes-pr.yml /tmp/aiciv-preserve/.github/workflows/import-hermes-pr.yml
 
       - name: Fetch exact Hermes commit
         run: |
@@ -46,16 +45,15 @@ jobs:
           git fetch --depth=1 hermes-upstream "$HERMES_SHA"
           test "$(git rev-parse FETCH_HEAD)" = "$HERMES_SHA"
 
-      - name: Replace branch tree with pinned upstream snapshot
+      - name: Prepare exact pinned Hermes tree
         run: |
-          # read-tree loads the exact upstream tree into the index/worktree.
+          # Load the exact upstream tree into the index and worktree.
           git read-tree --reset -u FETCH_HEAD
 
-          # Hermes upstream currently contains one or more Windows Alternate
-          # Data Stream metadata artifacts named *:Zone.Identifier. They carry
-          # no product/source content and can make generic index refreshes fail
-          # on downstream tooling. Drop only those artifacts and record the
-          # exclusion explicitly in the import receipt.
+          # Upstream currently contains Windows Alternate Data Stream metadata
+          # paths named *:Zone.Identifier. They are not source/product content
+          # and break downstream Git/worktree tooling. Exclude only those paths
+          # and record every exclusion in the import receipt.
           python - <<'PY'
           from pathlib import Path
           import subprocess
@@ -66,10 +64,7 @@ jobs:
               if not item or b":Zone.Identifier" not in item:
                   continue
               path = item.decode("utf-8", errors="surrogateescape")
-              subprocess.run(
-                  ["git", "update-index", "--force-remove", "--", path],
-                  check=True,
-              )
+              subprocess.run(["git", "update-index", "--force-remove", "--", path], check=True)
               try:
                   Path(path).unlink()
               except FileNotFoundError:
@@ -81,9 +76,11 @@ jobs:
               print(f"  - {path}")
           PY
 
-          mkdir -p .aiciv .github/workflows
+          # The one-time importer intentionally does NOT survive into the
+          # imported product tree. Only provenance/receipt metadata is added to
+          # the exact Hermes snapshot.
+          mkdir -p .aiciv
           cp /tmp/aiciv-preserve/.aiciv/UPSTREAM.md .aiciv/UPSTREAM.md
-          cp /tmp/aiciv-preserve/.github/workflows/import-hermes-pr.yml .github/workflows/import-hermes-pr.yml
 
           python - <<'PY'
           import json
@@ -109,27 +106,27 @@ jobs:
           )
           PY
 
+          git add -- .aiciv/UPSTREAM.md .aiciv/IMPORT_RECEIPT.json
+
           test -f LICENSE
           grep -q "MIT License" LICENSE
           grep -q "Copyright (c) 2025 Nous Research" LICENSE
           test -f web/package.json
           test -f web/src/App.tsx
 
-      - name: Commit imported snapshot to bootstrap branch
+      - name: Commit prepared index without worktree refresh
         run: |
-          # The upstream tree is already staged by read-tree. Add only our
-          # restored metadata instead of running git add -A across the huge
-          # index (which is what exposed the ADS path problem in attempt one).
-          git add -- \
-            .aiciv/UPSTREAM.md \
-            .aiciv/IMPORT_RECEIPT.json \
-            .github/workflows/import-hermes-pr.yml
+          # Use Git plumbing deliberately. `git commit` refreshes/re-walks the
+          # imported worktree and can choke on upstream platform-specific path
+          # artifacts even after the index has been sanitized. write-tree and
+          # commit-tree commit exactly the already-validated index.
+          TREE_SHA="$(git write-tree)"
+          PARENT_SHA="$(git rev-parse HEAD)"
+          COMMIT_SHA="$(printf '%s\n' "chore: import Hermes upstream $HERMES_SHA" | git commit-tree "$TREE_SHA" -p "$PARENT_SHA")"
 
-          if git diff --cached --quiet; then
-            echo "Pinned snapshot is already present."
-            exit 0
-          fi
+          echo "tree:   $TREE_SHA"
+          echo "commit: $COMMIT_SHA"
+          test -n "$COMMIT_SHA"
 
-          echo "staged files: $(git diff --cached --name-only | wc -l)"
-          git commit -m "chore: import Hermes upstream $HERMES_SHA"
-          git push origin HEAD:"$TARGET_BRANCH"
+          git update-ref "refs/heads/$TARGET_BRANCH" "$COMMIT_SHA" "$PARENT_SHA"
+          git push origin "$COMMIT_SHA:refs/heads/$TARGET_BRANCH"
