@@ -1,0 +1,70 @@
+name: Bootstrap pinned Hermes upstream
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bootstrap-hermes.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bootstrap-hermes
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HERMES_UPSTREAM: https://github.com/NousResearch/hermes-agent.git
+      HERMES_SHA: a726a4aee6dc6bd3bf42e32e51d391b60eb53aaf
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch exact Hermes snapshot
+        run: |
+          git remote remove hermes-upstream 2>/dev/null || true
+          git remote add hermes-upstream "$HERMES_UPSTREAM"
+          git fetch --depth=1 hermes-upstream "$HERMES_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$HERMES_SHA"
+
+      - name: Import upstream tree without replacing AiCIV metadata
+        run: |
+          # This imports the exact upstream tree into the product repository.
+          # Files unique to this repository, including .aiciv/* and this
+          # one-time bootstrap workflow, remain present.
+          git checkout FETCH_HEAD -- .
+
+          mkdir -p .aiciv
+          cat > .aiciv/IMPORT_RECEIPT.json <<EOF
+          {
+            "upstream": "NousResearch/hermes-agent",
+            "sha": "$HERMES_SHA",
+            "imported_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "method": "pinned-snapshot"
+          }
+          EOF
+
+          test -f LICENSE
+          grep -q "MIT License" LICENSE
+          grep -q "Copyright (c) 2025 Nous Research" LICENSE
+
+      - name: Commit pinned upstream snapshot
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No import changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: import Hermes upstream $HERMES_SHA"
+          git push origin HEAD:main
