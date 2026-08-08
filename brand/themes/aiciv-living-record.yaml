@@ -1,0 +1,159 @@
+# AiCIV — The Living Record
+# Hermes dashboard theme for the AiCIV product distribution.
+# Human authority: brand/BRAND_CONSTITUTION.md and the supplied brand sheet.
+name: aiciv-living-record
+label: "AiCIV — The Living Record"
+description: "Paper, Ink, Source Serif 4. Cyan interaction. One live Magenta mark."
+
+palette:
+  background: "#f3f2f2"
+  midground: "#201e1d"
+  foreground:
+    hex: "#201e1d"
+    alpha: 0
+  warmGlow: "rgba(32, 30, 29, 0)"
+  noiseOpacity: 0
+
+typography:
+  fontSans: '"Source Serif 4", Georgia, serif'
+  fontMono: '"Source Serif 4", Georgia, serif'
+  fontDisplay: '"Source Serif 4", Georgia, serif'
+  fontUrl: "https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;0,8..60,700;1,8..60,400&display=swap"
+  baseSize: "16px"
+  lineHeight: "1.52"
+  letterSpacing: "0"
+
+layout:
+  radius: "0"
+  density: "spacious"
+
+# The left rail is populated by the AiCIV shell plugin with meaning-first state.
+layoutVariant: cockpit
+
+assets:
+  bg: "none"
+  hero: "none"
+  crest: "none"
+
+componentStyles:
+  card:
+    background: "transparent"
+    boxShadow: "none"
+    clipPath: "none"
+  header:
+    background: "#f3f2f2"
+    boxShadow: "none"
+  sidebar:
+    background: "#f3f2f2"
+    boxShadow: "none"
+  tab:
+    clipPath: "none"
+  backdrop:
+    background: "#f3f2f2"
+    backgroundImage: "none"
+    fillerOpacity: "0"
+  page:
+    background: "#f3f2f2"
+
+colorOverrides:
+  card: "#f3f2f2"
+  cardForeground: "#201e1d"
+  popover: "#f3f2f2"
+  popoverForeground: "#201e1d"
+  primary: "#0088b0"
+  primaryForeground: "#f3f2f2"
+  secondary: "rgba(32, 30, 29, 0.06)"
+  secondaryForeground: "#201e1d"
+  muted: "rgba(32, 30, 29, 0.05)"
+  mutedForeground: "rgba(32, 30, 29, 0.70)"
+  accent: "#0088b0"
+  accentForeground: "#f3f2f2"
+  destructive: "#201e1d"
+  destructiveForeground: "#f3f2f2"
+  success: "#201e1d"
+  warning: "#201e1d"
+  border: "rgba(32, 30, 29, 0.16)"
+  input: "rgba(32, 30, 29, 0.22)"
+  ring: "#0088b0"
+
+customCSS: |
+  /* Living Record hard rules. This style tag exists only while this theme is active. */
+  :root[data-layout-variant="cockpit"] {
+    --aiciv-ink: #201e1d;
+    --aiciv-paper: #f3f2f2;
+    --aiciv-live: #d6006c;
+    --aiciv-interactive: #0088b0;
+    --aiciv-interactive-deep: #006786;
+    --aiciv-reading-measure: 34em;
+  }
+
+  :root[data-layout-variant="cockpit"] body,
+  :root[data-layout-variant="cockpit"] #root {
+    background: var(--aiciv-paper) !important;
+    background-image: none !important;
+    color: var(--aiciv-ink) !important;
+  }
+
+  /* Hermes' normal atmospheric treatment is intentionally absent in AiCIV. */
+  :root[data-layout-variant="cockpit"] body::before,
+  :root[data-layout-variant="cockpit"] body::after {
+    background: none !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    filter: none !important;
+  }
+
+  :root[data-layout-variant="cockpit"] h1,
+  :root[data-layout-variant="cockpit"] h2,
+  :root[data-layout-variant="cockpit"] h3,
+  :root[data-layout-variant="cockpit"] h4 {
+    font-family: "Source Serif 4", Georgia, serif !important;
+    text-align: left !important;
+    letter-spacing: -0.035em;
+  }
+
+  :root[data-layout-variant="cockpit"] p {
+    max-width: var(--aiciv-reading-measure);
+  }
+
+  :root[data-layout-variant="cockpit"] button,
+  :root[data-layout-variant="cockpit"] input,
+  :root[data-layout-variant="cockpit"] textarea,
+  :root[data-layout-variant="cockpit"] select,
+  :root[data-layout-variant="cockpit"] code,
+  :root[data-layout-variant="cockpit"] pre {
+    font-family: "Source Serif 4", Georgia, serif !important;
+  }
+
+  /* No visual gradient survives in the branded shell. */
+  :root[data-layout-variant="cockpit"] [class*="gradient"] {
+    background-image: none !important;
+  }
+
+  /* The plugin supplies the product wordmark before Hermes' host brand.
+     :has is supported by the browsers targeted by current Hermes dashboard. */
+  :root[data-layout-variant="cockpit"] header:has(.aiciv-wordmark-anchor) .aiciv-hide-when-branded {
+    display: none !important;
+  }
+
+  .aiciv-kicker,
+  .aiciv-rail,
+  .aiciv-table-head {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .aiciv-live-mark {
+    color: var(--aiciv-live) !important;
+  }
+
+  .aiciv-interactive,
+  .aiciv-interactive:visited {
+    color: var(--aiciv-interactive-deep) !important;
+  }
+
+  :root[data-layout-variant="cockpit"] :focus-visible {
+    outline: 2px solid var(--aiciv-interactive) !important;
+    outline-offset: 2px;
+  }
