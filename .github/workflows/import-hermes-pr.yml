@@ -48,22 +48,66 @@ jobs:
 
       - name: Replace branch tree with pinned upstream snapshot
         run: |
-          # read-tree gives us the exact upstream snapshot, including deletions,
-          # instead of an approximate file overlay.
+          # read-tree loads the exact upstream tree into the index/worktree.
           git read-tree --reset -u FETCH_HEAD
+
+          # Hermes upstream currently contains one or more Windows Alternate
+          # Data Stream metadata artifacts named *:Zone.Identifier. They carry
+          # no product/source content and can make generic index refreshes fail
+          # on downstream tooling. Drop only those artifacts and record the
+          # exclusion explicitly in the import receipt.
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          raw = subprocess.check_output(["git", "ls-files", "-z"])
+          removed = []
+          for item in raw.split(b"\0"):
+              if not item or b":Zone.Identifier" not in item:
+                  continue
+              path = item.decode("utf-8", errors="surrogateescape")
+              subprocess.run(
+                  ["git", "update-index", "--force-remove", "--", path],
+                  check=True,
+              )
+              try:
+                  Path(path).unlink()
+              except FileNotFoundError:
+                  pass
+              removed.append(path)
+          Path("/tmp/aiciv-excluded-ads.txt").write_text("\n".join(removed), encoding="utf-8")
+          print(f"excluded {len(removed)} Windows ADS metadata path(s)")
+          for path in removed:
+              print(f"  - {path}")
+          PY
 
           mkdir -p .aiciv .github/workflows
           cp /tmp/aiciv-preserve/.aiciv/UPSTREAM.md .aiciv/UPSTREAM.md
           cp /tmp/aiciv-preserve/.github/workflows/import-hermes-pr.yml .github/workflows/import-hermes-pr.yml
 
-          cat > .aiciv/IMPORT_RECEIPT.json <<EOF
-          {
-            "upstream": "NousResearch/hermes-agent",
-            "sha": "$HERMES_SHA",
-            "imported_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "method": "exact-git-tree-snapshot"
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import os
+
+          excluded = [
+              line for line in Path("/tmp/aiciv-excluded-ads.txt").read_text(encoding="utf-8").splitlines()
+              if line
+          ]
+          receipt = {
+              "upstream": "NousResearch/hermes-agent",
+              "sha": os.environ["HERMES_SHA"],
+              "imported_at_utc": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+              "method": "pinned-git-tree-snapshot",
+              "excluded_paths": excluded,
+              "exclusion_reason": "Windows :Zone.Identifier ADS metadata only",
           }
-          EOF
+          Path(".aiciv/IMPORT_RECEIPT.json").write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
 
           test -f LICENSE
           grep -q "MIT License" LICENSE
@@ -73,10 +117,19 @@ jobs:
 
       - name: Commit imported snapshot to bootstrap branch
         run: |
-          git add -A
+          # The upstream tree is already staged by read-tree. Add only our
+          # restored metadata instead of running git add -A across the huge
+          # index (which is what exposed the ADS path problem in attempt one).
+          git add -- \
+            .aiciv/UPSTREAM.md \
+            .aiciv/IMPORT_RECEIPT.json \
+            .github/workflows/import-hermes-pr.yml
+
           if git diff --cached --quiet; then
             echo "Pinned snapshot is already present."
             exit 0
           fi
+
+          echo "staged files: $(git diff --cached --name-only | wc -l)"
           git commit -m "chore: import Hermes upstream $HERMES_SHA"
           git push origin HEAD:"$TARGET_BRANCH"
