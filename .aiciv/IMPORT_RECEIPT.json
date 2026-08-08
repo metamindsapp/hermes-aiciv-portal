@@ -1,0 +1,8 @@
+{
+  "excluded_paths": [],
+  "exclusion_reason": "Windows :Zone.Identifier ADS metadata only",
+  "imported_at_utc": "2026-08-08T21:01:56.412137Z",
+  "method": "pinned-git-tree-snapshot",
+  "sha": "a726a4aee6dc6bd3bf42e32e51d391b60eb53aaf",
+  "upstream": "NousResearch/hermes-agent"
+}
