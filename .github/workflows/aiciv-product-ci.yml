@@ -43,9 +43,11 @@ jobs:
         run: |
           python -m py_compile \
             aiciv/install.py \
+            aiciv/run.py \
             aiciv/scripts/brand_lint.py \
             aiciv/plugins/aiciv-workspace/dashboard/plugin_api.py \
             aiciv/tests/test_brand_contract.py \
+            aiciv/tests/test_branded_distribution.py \
             aiciv/tests/test_workspace_plugin.py
 
       - name: Validate plugin manifest and theme YAML
