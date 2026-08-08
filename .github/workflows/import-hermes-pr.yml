@@ -1,0 +1,82 @@
+name: Import pinned Hermes snapshot
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/import-hermes-pr.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pinned-hermes-import
+  cancel-in-progress: false
+
+jobs:
+  import:
+    if: github.head_ref == 'bootstrap/pinned-hermes-import'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HERMES_UPSTREAM: https://github.com/NousResearch/hermes-agent.git
+      HERMES_SHA: a726a4aee6dc6bd3bf42e32e51d391b60eb53aaf
+      TARGET_BRANCH: bootstrap/pinned-hermes-import
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bootstrap/pinned-hermes-import
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Preserve AiCIV import metadata
+        run: |
+          mkdir -p /tmp/aiciv-preserve/.aiciv /tmp/aiciv-preserve/.github/workflows
+          cp .aiciv/UPSTREAM.md /tmp/aiciv-preserve/.aiciv/UPSTREAM.md
+          cp .github/workflows/import-hermes-pr.yml /tmp/aiciv-preserve/.github/workflows/import-hermes-pr.yml
+
+      - name: Fetch exact Hermes commit
+        run: |
+          git remote remove hermes-upstream 2>/dev/null || true
+          git remote add hermes-upstream "$HERMES_UPSTREAM"
+          git fetch --depth=1 hermes-upstream "$HERMES_SHA"
+          test "$(git rev-parse FETCH_HEAD)" = "$HERMES_SHA"
+
+      - name: Replace branch tree with pinned upstream snapshot
+        run: |
+          # read-tree gives us the exact upstream snapshot, including deletions,
+          # instead of an approximate file overlay.
+          git read-tree --reset -u FETCH_HEAD
+
+          mkdir -p .aiciv .github/workflows
+          cp /tmp/aiciv-preserve/.aiciv/UPSTREAM.md .aiciv/UPSTREAM.md
+          cp /tmp/aiciv-preserve/.github/workflows/import-hermes-pr.yml .github/workflows/import-hermes-pr.yml
+
+          cat > .aiciv/IMPORT_RECEIPT.json <<EOF
+          {
+            "upstream": "NousResearch/hermes-agent",
+            "sha": "$HERMES_SHA",
+            "imported_at_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "method": "exact-git-tree-snapshot"
+          }
+          EOF
+
+          test -f LICENSE
+          grep -q "MIT License" LICENSE
+          grep -q "Copyright (c) 2025 Nous Research" LICENSE
+          test -f web/package.json
+          test -f web/src/App.tsx
+
+      - name: Commit imported snapshot to bootstrap branch
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Pinned snapshot is already present."
+            exit 0
+          fi
+          git commit -m "chore: import Hermes upstream $HERMES_SHA"
+          git push origin HEAD:"$TARGET_BRANCH"
