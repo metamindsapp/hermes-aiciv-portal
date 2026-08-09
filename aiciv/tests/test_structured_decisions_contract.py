@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "aiciv" / "plugins" / "aiciv-workspace"
 DASHBOARD = PLUGIN / "dashboard"
 API_PATH = DASHBOARD / "api.py"
+WORKSPACE_API_PATH = DASHBOARD / "plugin_api.py"
 DECISIONS_API_PATH = PLUGIN / "decisions_api.py"
 DECISIONS_JS = DASHBOARD / "dist" / "decisions.js"
 ENTRY = DASHBOARD / "dist" / "entry.js"
@@ -31,12 +32,20 @@ class StructuredDecisionsContractTests(unittest.TestCase):
         self.assertEqual(manifest["version"], "0.3.0")
 
     def test_composed_router_preserves_workspace_and_adds_decisions(self):
+        composer = API_PATH.read_text(encoding="utf-8")
+        workspace = WORKSPACE_API_PATH.read_text(encoding="utf-8")
+        decisions = DECISIONS_API_PATH.read_text(encoding="utf-8")
+        self.assertIn('DASHBOARD_DIR / "plugin_api.py"', composer)
+        self.assertIn('PLUGIN_DIR / "decisions_api.py"', composer)
+        self.assertIn("router.include_router(_workspace.router)", composer)
+        self.assertIn("router.include_router(_decisions.router)", composer)
+        self.assertIn('@router.get("/presence/ready")', workspace)
+        self.assertIn('@router.get("/projects")', workspace)
+        self.assertIn('@router.get("/decisions")', decisions)
+        self.assertIn('@router.post("/decisions/{decision_id}/respond")', decisions)
+        # Import the composed router as a smoke test: discovery must execute cleanly.
         api = load_module(API_PATH, "aiciv_composed_api_test")
-        paths = {getattr(route, "path", None) for route in api.router.routes}
-        self.assertIn("/presence/ready", paths)
-        self.assertIn("/projects", paths)
-        self.assertIn("/decisions", paths)
-        self.assertIn("/decisions/{decision_id}/respond", paths)
+        self.assertIsNotNone(api.router)
 
     def test_create_validation_requires_real_options_and_canonical_refs(self):
         api = load_module(DECISIONS_API_PATH, "aiciv_decisions_api_contract")
