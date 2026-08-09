@@ -1,9 +1,9 @@
 {
   "name": "aiciv-workspace",
   "label": "AiCIV",
-  "description": "AiCIV Living Record shell, Now workspace, durable work, projects, activity and real Presence voice",
+  "description": "AiCIV Living Record shell, Now workspace, durable work, structured decisions, projects, activity and real Presence voice",
   "icon": "Activity",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "tab": {
     "path": "/aiciv",
     "override": "/"
@@ -19,5 +19,5 @@
   ],
   "entry": "dist/entry.js",
   "css": "dist/aiciv.css",
-  "api": "plugin_api.py"
+  "api": "api.py"
 }
