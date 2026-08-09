@@ -38,6 +38,7 @@
     .then(function () { return loadScript("talk-live.js"); })
     .then(function () { return loadScript("kanban-projection.js"); })
     .then(function () { return loadScript("decisions.js"); })
+    .then(function () { return loadScript("teams.js"); })
     .catch(function (error) {
       console.error("[AiCIV] Dashboard module load failure", error);
       window.dispatchEvent(new CustomEvent("aiciv:presence:state", {
