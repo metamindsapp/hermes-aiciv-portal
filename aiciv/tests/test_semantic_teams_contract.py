@@ -30,7 +30,7 @@ class SemanticTeamsContractTests(unittest.TestCase):
     def test_raw_hermes_work_remains_drilldown(self):
         text = TEAMS.read_text(encoding="utf-8")
         self.assertIn("Open raw Hermes work", text)
-        self.assertIn('"task:" + focus.id', text)
+        self.assertIn('" · task:" + focus.id', text)
         self.assertIn('"profile:" + row.name', text)
 
     def test_teams_is_scoped_to_aiciv_root(self):
