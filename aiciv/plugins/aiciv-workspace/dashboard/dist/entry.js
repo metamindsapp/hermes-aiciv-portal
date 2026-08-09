@@ -1,4 +1,4 @@
-/* AiCIV dashboard entrypoint. Loads the stable workspace UI first, then optional media runtime. */
+/* AiCIV dashboard entrypoint. Loads the stable workspace UI, then capability modules. */
 (function () {
   "use strict";
 
@@ -35,10 +35,11 @@
   loadStyle("talk-live.css");
   loadScript("index.js")
     .then(function () { return loadScript("talk-live.js"); })
+    .then(function () { return loadScript("kanban-projection.js"); })
     .catch(function (error) {
       console.error("[AiCIV] Dashboard module load failure", error);
       window.dispatchEvent(new CustomEvent("aiciv:presence:state", {
-        detail: { state: "error", active: false, muted: false, message: "AiCIV voice module could not be loaded." }
+        detail: { state: "error", active: false, muted: false, message: "An AiCIV capability module could not be loaded." }
       }));
     });
 })();
