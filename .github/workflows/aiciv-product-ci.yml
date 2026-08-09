@@ -45,10 +45,16 @@ jobs:
             aiciv/install.py \
             aiciv/run.py \
             aiciv/scripts/brand_lint.py \
+            aiciv/plugins/aiciv-workspace/dashboard/api.py \
             aiciv/plugins/aiciv-workspace/dashboard/plugin_api.py \
+            aiciv/plugins/aiciv-workspace/decision_store.py \
+            aiciv/plugins/aiciv-workspace/decisions_api.py \
+            aiciv/plugins/aiciv-workspace/decision_cli.py \
             aiciv/tests/test_brand_contract.py \
             aiciv/tests/test_branded_distribution.py \
-            aiciv/tests/test_workspace_plugin.py
+            aiciv/tests/test_workspace_plugin.py \
+            aiciv/tests/test_decision_store.py \
+            aiciv/tests/test_structured_decisions_contract.py
 
       - name: Validate plugin manifest and theme YAML
         run: |
@@ -60,14 +66,19 @@ jobs:
           manifest = json.loads(Path('aiciv/plugins/aiciv-workspace/dashboard/manifest.json').read_text())
           assert manifest['name'] == 'aiciv-workspace'
           assert manifest['tab']['override'] == '/'
-          assert manifest['api'] == 'plugin_api.py'
+          assert manifest['api'] == 'api.py'
           theme = yaml.safe_load(Path('brand/themes/aiciv-living-record.yaml').read_text())
           assert theme['name'] == 'aiciv-living-record'
           assert theme['layoutVariant'] == 'cockpit'
           PY
 
       - name: Parse dashboard plugin JavaScript
-        run: node --check aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+        run: |
+          node --check aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+          node --check aiciv/plugins/aiciv-workspace/dashboard/dist/entry.js
+          node --check aiciv/plugins/aiciv-workspace/dashboard/dist/talk-live.js
+          node --check aiciv/plugins/aiciv-workspace/dashboard/dist/kanban-projection.js
+          node --check aiciv/plugins/aiciv-workspace/dashboard/dist/decisions.js
 
       - name: Enforce Living Record brand constraints
         run: python aiciv/scripts/brand_lint.py
