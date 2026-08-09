@@ -27,6 +27,271 @@ permissions:
   contents: read
 
 jobs:
+  prepare-talk-live:
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/real-talk-live'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/real-talk-live
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Generate source from current plugin and add real WebRTC runtime
+        run: |
+          if [ -f aiciv/plugins/aiciv-workspace/dashboard/src/index.js ]; then
+            echo "Talk Live source already generated."
+            exit 0
+          fi
+          mkdir -p aiciv/plugins/aiciv-workspace/dashboard/src
+          cp aiciv/plugins/aiciv-workspace/dashboard/dist/index.js aiciv/plugins/aiciv-workspace/dashboard/src/index.js
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('aiciv/plugins/aiciv-workspace/dashboard/src/index.js')
+          text = path.read_text(encoding='utf-8')
+          text = 'import { Conversation } from "@elevenlabs/client";\n\n' + text
+          old_start = text.index('  function HeaderPresenceSlot() {')
+          old_end = text.index('  function SidebarSlot() {', old_start)
+          runtime = r'''  function voiceErrorMessage(error) {
+    if (!error) return "Voice connection failed.";
+    if (typeof error === "string") return error.slice(0, 240);
+    if (typeof error.message === "string") return error.message.slice(0, 240);
+    return "Voice connection failed.";
+  }
+
+  const VoiceRuntime = (function () {
+    let conversation = null;
+    let state = "idle";
+    let muted = false;
+    let conversationId = "";
+    let startPromise = null;
+
+    function emit(next, detail) {
+      state = next;
+      const payload = Object.assign({
+        state: state,
+        muted: muted,
+        active: Boolean(conversation) || state === "connecting",
+        conversationId: conversationId || null
+      }, detail || {});
+      window.dispatchEvent(new CustomEvent("aiciv:presence:state", { detail: payload }));
+      return payload;
+    }
+
+    async function requestMicrophone() {
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+        throw new Error("This browser does not expose microphone access.");
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      for (const track of stream.getTracks()) track.stop();
+    }
+
+    async function getToken(tokenEndpoint) {
+      const body = await SDK.fetchJSON(tokenEndpoint, { method: "POST" });
+      const token = body && body.token;
+      if (typeof token !== "string" || !token) {
+        throw new Error("Presence did not return a conversation token.");
+      }
+      return {
+        token: token,
+        conversationId: typeof body.conversationId === "string" ? body.conversationId : ""
+      };
+    }
+
+    async function start(options) {
+      if (conversation) return conversation;
+      if (startPromise) return startPromise;
+      startPromise = (async function () {
+        muted = false;
+        conversationId = "";
+        emit("connecting");
+        try {
+          await requestMicrophone();
+          const token = await getToken(options.tokenEndpoint);
+          conversationId = token.conversationId;
+          const session = await Conversation.startSession({
+            conversationToken: token.token,
+            connectionType: "webrtc",
+            onConnect: function () {
+              if (!muted) emit("listening");
+            },
+            onDisconnect: function () {
+              conversation = null;
+              muted = false;
+              emit("idle");
+            },
+            onError: function (error) {
+              emit("error", { message: voiceErrorMessage(error) });
+            },
+            onStatusChange: function (value) {
+              const status = typeof value === "string" ? value : value && value.status;
+              if (status === "connecting") emit("connecting");
+              if (status === "connected" && !muted && state !== "speaking") emit("listening");
+              if (status === "disconnected") {
+                conversation = null;
+                muted = false;
+                emit("idle");
+              }
+            },
+            onModeChange: function (value) {
+              const mode = typeof value === "string" ? value : value && value.mode;
+              if (!muted && (mode === "speaking" || mode === "listening")) emit(mode);
+            }
+          });
+          conversation = session;
+          if (session && typeof session.getId === "function") {
+            conversationId = session.getId() || conversationId;
+          }
+          if (state === "connecting") emit("listening");
+          return session;
+        } catch (error) {
+          conversation = null;
+          muted = false;
+          emit("error", { message: voiceErrorMessage(error) });
+          throw error;
+        } finally {
+          startPromise = null;
+        }
+      })();
+      return startPromise;
+    }
+
+    async function stop() {
+      const current = conversation;
+      conversation = null;
+      muted = false;
+      if (!current) {
+        emit("idle");
+        return;
+      }
+      emit("disconnecting");
+      try {
+        await current.endSession();
+      } finally {
+        emit("idle");
+      }
+    }
+
+    function toggleMute() {
+      if (!conversation || typeof conversation.setMicMuted !== "function") return muted;
+      muted = !muted;
+      conversation.setMicMuted(muted);
+      emit(muted ? "muted" : "listening");
+      return muted;
+    }
+
+    function snapshot() {
+      return {
+        state: state,
+        muted: muted,
+        active: Boolean(conversation) || state === "connecting",
+        conversationId: conversationId || null
+      };
+    }
+
+    return { start: start, stop: stop, toggleMute: toggleMute, snapshot: snapshot };
+  })();
+
+  window.__AICIV_PRESENCE_VOICE__ = VoiceRuntime;
+
+  function HeaderPresenceSlot() {
+    const presence = usePoll(function () { return SDK.fetchJSON(API + "/presence/ready"); }, 30000);
+    const ready = Boolean(presence.value && presence.value.ready);
+    const initial = VoiceRuntime.snapshot();
+    const [voiceState, setVoiceState] = useState(initial.state);
+    const [muted, setMuted] = useState(initial.muted);
+    const [voiceError, setVoiceError] = useState("");
+
+    useEffect(function () {
+      function onState(event) {
+        const detail = event && event.detail ? event.detail : {};
+        if (typeof detail.state === "string") setVoiceState(detail.state);
+        if (typeof detail.muted === "boolean") setMuted(detail.muted);
+        if (typeof detail.message === "string") setVoiceError(detail.message);
+        if (detail.state !== "error") setVoiceError("");
+      }
+      window.addEventListener("aiciv:presence:state", onState);
+      return function () { window.removeEventListener("aiciv:presence:state", onState); };
+    }, []);
+
+    const active = ["connecting", "listening", "speaking", "muted", "disconnecting"].indexOf(voiceState) >= 0;
+
+    function toggleVoice() {
+      if (active) {
+        VoiceRuntime.stop().catch(function () {});
+        return;
+      }
+      VoiceRuntime.start({ tokenEndpoint: API + "/presence/voice-token", surface: "hermes-web" }).catch(function () {});
+    }
+
+    function toggleMute() {
+      VoiceRuntime.toggleMute();
+    }
+
+    let label = "Talk Live";
+    if (voiceState === "connecting") label = "Connecting";
+    if (voiceState === "listening") label = "Listening";
+    if (voiceState === "speaking") label = "Speaking";
+    if (voiceState === "muted") label = "Muted";
+    if (voiceState === "disconnecting") label = "Ending";
+    if (voiceState === "error") label = "Retry Talk Live";
+
+    return h("div", { className: "aiciv-presence-group" },
+      h("button", {
+        type: "button",
+        className: "aiciv-presence-control" + (active ? " aiciv-presence-control--active" : ""),
+        disabled: !ready || voiceState === "disconnecting",
+        onClick: toggleVoice,
+        title: !ready ? "Presence Gateway is not ready" : active ? "End the live AiCIV voice conversation" : "Start a live AiCIV voice conversation"
+      }, label),
+      active && voiceState !== "connecting" && voiceState !== "disconnecting"
+        ? h("button", {
+            type: "button",
+            className: "aiciv-presence-mute",
+            onClick: toggleMute,
+            "aria-pressed": muted,
+            title: muted ? "Unmute microphone" : "Mute microphone"
+          }, muted ? "Unmute" : "Mute")
+        : null,
+      voiceError ? h("span", { className: "aiciv-presence-error", role: "status" }, voiceError) : null
+    );
+  }
+
+'''
+          path.write_text(text[:old_start] + runtime + text[old_end:], encoding='utf-8')
+          PY
+      - name: Add exact ElevenLabs build dependency and bundle
+        run: |
+          npm install --save-dev --save-exact @elevenlabs/client@1.11.0
+          npm exec vite -- build --config aiciv/plugins/aiciv-workspace/dashboard/vite.config.mjs
+      - name: Verify generated browser contract
+        run: |
+          node --check aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+          grep -q 'conversationToken' aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+          grep -q 'getUserMedia' aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+          grep -q 'setMicMuted' aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+          grep -q 'endSession' aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+          ! grep -q 'ELEVENLABS_API_KEY' aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+      - name: Commit generated bundle and exact dependency lock
+        run: |
+          git add package.json package-lock.json \
+            aiciv/plugins/aiciv-workspace/dashboard/src/index.js \
+            aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
+          if git diff --cached --quiet; then
+            echo "Talk Live artifacts already generated."
+            exit 0
+          fi
+          git commit -m "feat: connect Talk Live over ElevenLabs WebRTC"
+          git push origin HEAD:agent/real-talk-live
+
   product-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 12
@@ -35,10 +300,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install focused validation dependencies
         run: python -m pip install --disable-pip-version-check fastapi pyyaml
-
       - name: Compile AiCIV Python modules
         run: |
           python -m py_compile \
@@ -49,14 +312,12 @@ jobs:
             aiciv/tests/test_brand_contract.py \
             aiciv/tests/test_branded_distribution.py \
             aiciv/tests/test_workspace_plugin.py
-
       - name: Validate plugin manifest and theme YAML
         run: |
           python - <<'PY'
           import json
           from pathlib import Path
           import yaml
-
           manifest = json.loads(Path('aiciv/plugins/aiciv-workspace/dashboard/manifest.json').read_text())
           assert manifest['name'] == 'aiciv-workspace'
           assert manifest['tab']['override'] == '/'
@@ -65,16 +326,12 @@ jobs:
           assert theme['name'] == 'aiciv-living-record'
           assert theme['layoutVariant'] == 'cockpit'
           PY
-
       - name: Parse dashboard plugin JavaScript
         run: node --check aiciv/plugins/aiciv-workspace/dashboard/dist/index.js
-
       - name: Enforce Living Record brand constraints
         run: python aiciv/scripts/brand_lint.py
-
       - name: Run all AiCIV product tests
         run: python -m unittest discover -s aiciv/tests -p 'test_*.py' -v
-
       - name: Dry-run installer
         run: python aiciv/install.py --hermes-home /tmp/hermes-aiciv-ci --dry-run
 
@@ -88,15 +345,11 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: package-lock.json
-
       - name: Install exact Hermes workspace dependencies
         run: npm ci
-
       - name: Typecheck Hermes dashboard
         run: npm --workspace web run typecheck
-
       - name: Build Hermes dashboard for production
         run: npm --workspace web run build
-
       - name: Run Hermes dashboard tests
         run: npm --workspace web test
