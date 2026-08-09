@@ -30,6 +30,11 @@ class KanbanProjectionContractTests(unittest.TestCase):
         self.assertIn('"task:" + event.task_id', text)
         self.assertIn('"run:" + event.run_id', text)
 
+    def test_projection_uses_actual_hermes_card_fields(self):
+        text = PROJECTION.read_text(encoding="utf-8")
+        self.assertIn("task.latest_summary || task.body", text)
+        self.assertIn("task.assignee || task.tenant", text)
+
     def test_projection_surfaces_meaning_before_raw_status(self):
         text = PROJECTION.read_text(encoding="utf-8")
         for label in ("Working", "Needs attention", "Ready for review", "Scheduled"):
@@ -37,8 +42,11 @@ class KanbanProjectionContractTests(unittest.TestCase):
         self.assertIn("Open authoritative board", text)
         self.assertIn("AiCIV will not invent task state", text)
 
-    def test_projection_targets_only_now_and_activity(self):
+    def test_projection_never_leaks_onto_raw_hermes_routes(self):
         text = PROJECTION.read_text(encoding="utf-8")
+        self.assertIn("function isAiCivRootRoute()", text)
+        self.assertIn('return path === "/"', text)
+        self.assertIn("if (!isAiCivRootRoute()) return null", text)
         self.assertIn('view !== "now" && view !== "activity"', text)
         self.assertIn('REGISTRY.registerSlot("aiciv-kanban-projection", "post-main"', text)
 
