@@ -1,0 +1,46 @@
+name: Package current main tarball
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/package-current-main-tarball.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Package exact current main
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          MAIN_SHA="$(git rev-parse origin/main)"
+          SHORT_SHA="${MAIN_SHA:0:12}"
+          NAME="hermes-aiciv-portal-main-${SHORT_SHA}"
+          git archive --format=tar --prefix="hermes-aiciv-portal/" "$MAIN_SHA" | gzip -9 > "${NAME}.tar.gz"
+          sha256sum "${NAME}.tar.gz" > "${NAME}.tar.gz.sha256"
+          echo "main_sha=$MAIN_SHA" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          tar -tzf "${NAME}.tar.gz" >/dev/null
+          echo "Packaged $MAIN_SHA"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: hermes-aiciv-portal-main-tarball
+          path: |
+            ${{ steps.package.outputs.name }}.tar.gz
+            ${{ steps.package.outputs.name }}.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
