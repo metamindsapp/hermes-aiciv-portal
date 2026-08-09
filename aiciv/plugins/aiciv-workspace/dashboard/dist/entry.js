@@ -10,7 +10,7 @@
 
   const base = new URL(".", current.src);
 
-  function load(name) {
+  function loadScript(name) {
     return new Promise(function (resolve, reject) {
       const script = document.createElement("script");
       script.src = new URL(name, base).toString();
@@ -22,8 +22,19 @@
     });
   }
 
-  load("index.js")
-    .then(function () { return load("talk-live.js"); })
+  function loadStyle(name) {
+    const href = new URL(name, base).toString();
+    if (document.querySelector('link[data-aiciv-style="' + name + '"]')) return;
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = href;
+    link.dataset.aicivStyle = name;
+    document.head.appendChild(link);
+  }
+
+  loadStyle("talk-live.css");
+  loadScript("index.js")
+    .then(function () { return loadScript("talk-live.js"); })
     .catch(function (error) {
       console.error("[AiCIV] Dashboard module load failure", error);
       window.dispatchEvent(new CustomEvent("aiciv:presence:state", {
